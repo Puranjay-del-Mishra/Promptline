@@ -1,0 +1,7 @@
+{
+  "version": "2.0",
+  "rawPath": "/config/publish-to-s3",
+  "headers": { "content-type": "application/json" },
+  "requestContext": { "http": { "method": "POST", "path": "/config/publish-to-s3" } },
+  "body": "{\"kind\":\"ui\",\"content\":\"{\\\"theme\\\":\\\"dark\\\",\\\"version\\\":1}\"}"
+}

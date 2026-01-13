@@ -1,0 +1,6 @@
+{
+  "version": "2.0",
+  "rawPath": "/healthz",
+  "requestContext": { "http": { "method": "GET", "path": "/healthz" } },
+  "headers": { "content-type": "application/json" }
+}
