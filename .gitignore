@@ -1,0 +1,33 @@
+# ---- Java / Maven / Gradle build outputs ----
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+
+# ---- Logs ----
+*.log
+
+# ---- IDEs ----
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Env / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Node (if you have frontend anywhere) ----
+node_modules/
+dist/
+.next/
