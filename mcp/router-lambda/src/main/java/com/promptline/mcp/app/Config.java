@@ -21,7 +21,7 @@ public record Config(
                 env("S3_BUCKET"),
                 envOr("S3_RUNTIME_PREFIX", "runtime/"),
                 env("BACKEND_NOTIFY_URL"),
-                env("INTERNAL_NOTIFY_TOKEN")
+                env("MCP_INTERNAL_API_KEY")
         );
     }
 
