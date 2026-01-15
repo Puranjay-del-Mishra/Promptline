@@ -21,7 +21,7 @@ jobs:
 
       - name: Call MCP publish-canonical
         env:
-          MCP_BASE_URL: ${{ secrets.MCP_BASE_URL }}         # e.g. https://702s1q2eid.execute-api.us-east-1.amazonaws.com
+          MCP_BASE_URL: ${{ secrets.MCP_BASE_URL }}
           MCP_INTERNAL_API_KEY: ${{ secrets.MCP_INTERNAL_API_KEY }}
         run: |
           set -euo pipefail
@@ -38,3 +38,22 @@ jobs:
           echo
           echo "Response:"
           cat /tmp/out.json
+
+      - name: Notify backend to invalidate cache
+        env:
+          BACKEND_BASE_URL: ${{ secrets.BACKEND_BASE_URL }}  # e.g. http://54.210.22.147:8080
+        run: |
+          set -euo pipefail
+          : "${BACKEND_BASE_URL:?Missing secret BACKEND_BASE_URL}"
+
+          echo "Notifying backend: ${BACKEND_BASE_URL}/internal/config-updated"
+
+          curl -sS -X POST "${BACKEND_BASE_URL}/internal/config-updated" \
+            -H "content-type: application/json" \
+            -d '{"env":"live","updated":["ui","policy"],"version":"'"$GITHUB_SHA"'"}' \
+            | tee /tmp/backend_notify.json
+
+          echo
+          echo "Backend response:"
+          cat /tmp/backend_notify.json || true
+
