@@ -1,0 +1,8 @@
+{
+  "allowlist": [
+    "/healthz"
+  ],
+  "rateLimit": {
+    "rpm": 6969
+  }
+}

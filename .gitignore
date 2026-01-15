@@ -1,0 +1,17 @@
+
+# --- build artifacts ---
+**/target/
+backend/build/
+**/*.class
+**/*.jar
+**/*.jar.original
+**/*.log
+
+# --- local dumps / data ---
+promptline.dump
+*.dump
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store

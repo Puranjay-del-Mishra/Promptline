@@ -1,0 +1,40 @@
+name: Publish canonical config to S3 (via MCP)
+
+on:
+  push:
+    branches:
+      - config/live
+    paths:
+      - "config/**"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sanity (show changed files)
+        run: |
+          echo "Branch: $GITHUB_REF"
+          echo "SHA:    $GITHUB_SHA"
+
+      - name: Call MCP publish-canonical
+        env:
+          MCP_BASE_URL: ${{ secrets.MCP_BASE_URL }}         # e.g. https://702s1q2eid.execute-api.us-east-1.amazonaws.com
+          MCP_INTERNAL_API_KEY: ${{ secrets.MCP_INTERNAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          : "${MCP_BASE_URL:?Missing secret MCP_BASE_URL}"
+          : "${MCP_INTERNAL_API_KEY:?Missing secret MCP_INTERNAL_API_KEY}"
+
+          echo "Calling: ${MCP_BASE_URL}/config/publish-canonical"
+
+          curl -sS -X POST "${MCP_BASE_URL}/config/publish-canonical" \
+            -H "content-type: application/json" \
+            -H "x-mcp-internal-api-key: ${MCP_INTERNAL_API_KEY}" \
+            -d '{}' | tee /tmp/out.json
+
+          echo
+          echo "Response:"
+          cat /tmp/out.json
