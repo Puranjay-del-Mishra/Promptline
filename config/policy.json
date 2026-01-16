@@ -3,6 +3,6 @@
     "/healthz"
   ],
   "rateLimit": {
-    "rpm": 696969
+    "rpm": 69
   }
 }
