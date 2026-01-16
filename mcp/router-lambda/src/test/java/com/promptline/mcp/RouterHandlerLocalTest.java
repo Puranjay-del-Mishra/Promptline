@@ -1,6 +1,5 @@
 package com.promptline.mcp;
 
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,6 +13,11 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPEvent;
 import com.promptline.mcp.handler.RouterHandler;
 
 public class RouterHandlerLocalTest {
+
+    static {
+        // Config.env() now falls back to system properties for tests.
+        System.setProperty("MCP_INTERNAL_API_KEY", "test");
+    }
 
     @Test
     void healthz_ok() {
@@ -29,16 +33,15 @@ public class RouterHandlerLocalTest {
     }
 
     @Test
-    void gitGetFile_emptyBody_is400() {
+    void gitGetFile_emptyBody_is400_or_422() {
         RouterHandler h = new RouterHandler();
 
-        APIGatewayV2HTTPEvent evt = newEvent("POST", "/git/get-file", "");
+        APIGatewayV2HTTPEvent evt = newEvent("POST", "/git/get-file", ""); // empty => should validate-fail
 
         var resp = h.handleRequest(evt, new FakeContext());
         System.out.println("git/get-file status=" + resp.getStatusCode());
         System.out.println("git/get-file body=" + resp.getBody());
 
-        // should fail *after* auth (empty body)
         assertTrue(resp.getStatusCode() == 400 || resp.getStatusCode() == 422);
     }
 
@@ -47,12 +50,11 @@ public class RouterHandlerLocalTest {
         evt.setRawPath(path);
         evt.setBody(body);
 
-        // IMPORTANT: set both casings (API Gateway often lowercases headers)
-        Map<String, String> headers = new HashMap<>();
-        headers.put("content-type", "application/json");
-        headers.put("X-Internal-Token", "test");
-        headers.put("x-internal-token", "test");
-        evt.setHeaders(headers);
+        // headers
+        evt.setHeaders(Map.of(
+                "content-type", "application/json",
+                "x-mcp-internal-api-key", "test"
+        ));
 
         // requestContext.http.method/path
         APIGatewayV2HTTPEvent.RequestContext rc = new APIGatewayV2HTTPEvent.RequestContext();
@@ -65,6 +67,7 @@ public class RouterHandlerLocalTest {
         return evt;
     }
 
+    // Minimal Context implementation
     static final class FakeContext implements Context {
         private final LambdaLogger logger = new LambdaLogger() {
             @Override public void log(String message) { System.out.println(message); }

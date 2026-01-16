@@ -7,6 +7,7 @@ public record Config(
         String repoName,
 
         // Branches
+<<<<<<< HEAD
         String configBranchLive,     // "config/live"
 
         // S3 runtime publishing
@@ -18,6 +19,19 @@ public record Config(
 
         // Shared internal token (RouterHandler auth header + backend notify header)
         // RouterHandler currently reads this as the expected value for x-mcp-internal-api-key
+=======
+        String configBranchLive,
+
+        // S3 runtime publishing
+        String s3Bucket,
+        String s3RuntimePrefix,
+
+        // Auth (internal)
+        String mcpInternalApiKey,
+
+        // Backend notify (cache invalidation)
+        String backendNotifyUrl,
+>>>>>>> c291eb3 (mcp: phase0 live-check + open PR detection plumbing)
         String internalToken,
 
         // Backend read (Phase 0 live-check)
@@ -34,9 +48,16 @@ public record Config(
                 env("S3_BUCKET", ""),
                 env("S3_RUNTIME_PREFIX", "runtime/"),
 
+<<<<<<< HEAD
                 env("BACKEND_NOTIFY_URL", ""),
 
                 // One token to rule them all 🧙‍♂️
+=======
+                env("MCP_INTERNAL_API_KEY", ""),
+
+                env("BACKEND_NOTIFY_URL", ""),
+
+>>>>>>> c291eb3 (mcp: phase0 live-check + open PR detection plumbing)
                 env("MCP_INTERNAL_API_KEY", env("INTERNAL_NOTIFY_TOKEN", "")),
 
                 env("BACKEND_PUBLIC_BASE_URL", "")
@@ -44,7 +65,14 @@ public record Config(
     }
 
     private static String env(String key, String def) {
+<<<<<<< HEAD
         String v = System.getenv(key);
+=======
+        // Prefer real env vars (Lambda), fall back to system properties (unit tests)
+        String v = System.getenv(key);
+        if (v == null) v = System.getProperty(key);
+
+>>>>>>> c291eb3 (mcp: phase0 live-check + open PR detection plumbing)
         if (v == null) return def;
         v = v.trim();
         return v.isEmpty() ? def : v;
