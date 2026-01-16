@@ -1,39 +1,52 @@
 package com.promptline.mcp.app;
 
 public record Config(
+        // GitHub
         String githubToken,
         String repoOwner,
         String repoName,
 
+        // Branches
         String configBranchLive,     // "config/live"
+
+        // S3 runtime publishing
         String s3Bucket,
         String s3RuntimePrefix,      // "runtime/"
+
+        // Backend notify (cache invalidation)
         String backendNotifyUrl,     // "https://.../internal/config-updated"
-        String internalToken         // shared token for both MCP + backend
+
+        // Shared internal token (RouterHandler auth header + backend notify header)
+        // RouterHandler currently reads this as the expected value for x-mcp-internal-api-key
+        String internalToken,
+
+        // Backend read (Phase 0 live-check)
+        String backendPublicBaseUrl
 ) {
     public static Config fromEnv() {
         return new Config(
-                env("GITHUB_TOKEN"),
-                env("REPO_OWNER"),
-                env("REPO_NAME"),
+                env("GITHUB_TOKEN", ""),
+                env("REPO_OWNER", ""),
+                env("REPO_NAME", ""),
 
-                envOr("CONFIG_BRANCH_LIVE", "config/live"),
-                env("S3_BUCKET"),
-                envOr("S3_RUNTIME_PREFIX", "runtime/"),
-                env("BACKEND_NOTIFY_URL"),
-                env("MCP_INTERNAL_API_KEY")
+                env("CONFIG_BRANCH_LIVE", "config/live"),
+
+                env("S3_BUCKET", ""),
+                env("S3_RUNTIME_PREFIX", "runtime/"),
+
+                env("BACKEND_NOTIFY_URL", ""),
+
+                // One token to rule them all 🧙‍♂️
+                env("MCP_INTERNAL_API_KEY", env("INTERNAL_NOTIFY_TOKEN", "")),
+
+                env("BACKEND_PUBLIC_BASE_URL", "")
         );
     }
 
-    private static String env(String k) {
-        String v = System.getenv(k);
-        return v == null ? "" : v.trim();
-    }
-
-    private static String envOr(String k, String dflt) {
-        String v = System.getenv(k);
-        if (v == null) return dflt;
+    private static String env(String key, String def) {
+        String v = System.getenv(key);
+        if (v == null) return def;
         v = v.trim();
-        return v.isBlank() ? dflt : v;
+        return v.isEmpty() ? def : v;
     }
 }

@@ -7,30 +7,26 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPResponse;
 import com.promptline.mcp.app.App;
 import com.promptline.mcp.routing.ApiError;
 import com.promptline.mcp.routing.Responses;
-import com.promptline.mcp.util.InternalAuth;
 
 public class RouterHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGatewayV2HTTPResponse> {
-
-    private static final String AUTH_HEADER = "x-mcp-internal-api-key";
 
     @Override
     public APIGatewayV2HTTPResponse handleRequest(APIGatewayV2HTTPEvent event, Context context) {
         var app = App.get();
-
         try {
             String path = event.getRawPath();
-            String method = (event.getRequestContext() != null && event.getRequestContext().getHttp() != null)
+            String method = event.getRequestContext() != null && event.getRequestContext().getHttp() != null
                     ? event.getRequestContext().getHttp().getMethod()
                     : null;
 
-            // Allow healthz publicly
+            // Auth gate: allow healthz publicly; everything else requires X-Internal-Token
             if (!"/healthz".equals(path)) {
-                String expected = app.config.internalToken(); // <-- map this to MCP_INTERNAL_API_KEY in Config
-                boolean ok = InternalAuth.isAuthorized(event.getHeaders(), AUTH_HEADER, expected);
-
-                if (!ok) {
-                    return Responses.error(app.om, 401,
-                            ApiError.of("UNAUTHORIZED", "missing/invalid " + AUTH_HEADER));
+                String expected = app.config.internalToken();
+                if (expected != null && !expected.isBlank()) {
+                    String got = event.getHeaders() != null ? event.getHeaders().get("x-internal-token") : null;
+                    if (got == null || !expected.equals(got)) {
+                        return Responses.error(app.om, 401, ApiError.of("UNAUTHORIZED", "missing/invalid X-Internal-Token"));
+                    }
                 }
             }
 
