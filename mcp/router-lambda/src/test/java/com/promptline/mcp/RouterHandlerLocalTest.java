@@ -15,7 +15,7 @@ import com.promptline.mcp.handler.RouterHandler;
 public class RouterHandlerLocalTest {
 
     static {
-        // Config.env() now falls back to system properties for tests.
+        // Works because Config.env() falls back to System.getProperty in tests.
         System.setProperty("MCP_INTERNAL_API_KEY", "test");
     }
 
@@ -36,7 +36,7 @@ public class RouterHandlerLocalTest {
     void gitGetFile_emptyBody_is400_or_422() {
         RouterHandler h = new RouterHandler();
 
-        APIGatewayV2HTTPEvent evt = newEvent("POST", "/git/get-file", ""); // empty => should validate-fail
+        APIGatewayV2HTTPEvent evt = newEvent("POST", "/git/get-file", "");
 
         var resp = h.handleRequest(evt, new FakeContext());
         System.out.println("git/get-file status=" + resp.getStatusCode());
@@ -50,13 +50,15 @@ public class RouterHandlerLocalTest {
         evt.setRawPath(path);
         evt.setBody(body);
 
-        // headers
+        // Send what RouterHandler expects (X-Internal-Token),
+        // and also keep x-mcp-internal-api-key for compatibility.
         evt.setHeaders(Map.of(
                 "content-type", "application/json",
+                "X-Internal-Token", "test",
+                "x-internal-token", "test",
                 "x-mcp-internal-api-key", "test"
         ));
 
-        // requestContext.http.method/path
         APIGatewayV2HTTPEvent.RequestContext rc = new APIGatewayV2HTTPEvent.RequestContext();
         APIGatewayV2HTTPEvent.RequestContext.Http http = new APIGatewayV2HTTPEvent.RequestContext.Http();
         http.setMethod(method);
@@ -67,7 +69,6 @@ public class RouterHandlerLocalTest {
         return evt;
     }
 
-    // Minimal Context implementation
     static final class FakeContext implements Context {
         private final LambdaLogger logger = new LambdaLogger() {
             @Override public void log(String message) { System.out.println(message); }

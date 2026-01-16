@@ -18,15 +18,13 @@ import com.promptline.mcp.core.publish.AwsS3Publisher;
 import com.promptline.mcp.core.publish.PublishToS3Service;
 import com.promptline.mcp.core.publish.S3Publisher;
 import com.promptline.mcp.model.config.PublishCanonicalResponse;
-import com.promptline.mcp.model.git.GetFileRequest;
-import com.promptline.mcp.model.git.GetFileResponse;
 import com.promptline.mcp.model.live.ConfigCheckLiveRequest;
 import com.promptline.mcp.model.live.ConfigCheckLiveResponse;
 import com.promptline.mcp.model.pr.ConfigCheckOpenPrResponse;
 import com.promptline.mcp.model.publish.PublishToS3Request;
+import com.promptline.mcp.model.publish.PublishToS3Response;
 import com.promptline.mcp.routing.Router;
 import com.promptline.mcp.util.ApiException;
-import com.promptline.mcp.app.Config;
 
 import software.amazon.awssdk.services.s3.S3Client;
 
