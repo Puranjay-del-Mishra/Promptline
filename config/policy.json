@@ -1,8 +1,9 @@
 {
-  "allowlist": [
-    "/healthz"
-  ],
-  "rateLimit": {
-    "rpm": 69
+  "allowlist" : [ "/healthz" ],
+  "rateLimit" : {
+    "rpm" : 69
+  },
+  "rules" : {
+    "mode" : "strict"
   }
 }
