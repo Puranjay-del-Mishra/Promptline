@@ -32,12 +32,14 @@ jobs:
 
           curl -sS -X POST "${MCP_BASE_URL}/config/publish-canonical" \
             -H "content-type: application/json" \
-            -H "x-mcp-internal-api-key: ${MCP_INTERNAL_API_KEY}" \
+            -H "x-internal-token: ${MCP_INTERNAL_API_KEY}" \
             -d '{}' | tee /tmp/out.json
 
           echo
           echo "Response:"
           cat /tmp/out.json
+          #hard fail if the publish does not work
+          jq -e '.error == null' /tmp/out.json >/dev/null
 
       - name: Notify backend to invalidate cache
         env:
