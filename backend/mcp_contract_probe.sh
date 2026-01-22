@@ -2,6 +2,16 @@
 set -euo pipefail
 
 ############################################
+# MCP + BACKEND CONTRACT PROBE (BETTER)
+# - Randomized change-set per run (demo-friendly)
+# - Captures ensure-pr response and prints PR URL/head branch
+# - Fetches BOTH base branch + PR head config files and shows diffs:
+#     - ui.rateLimit.rpm
+#     - policy.rules.mode
+# - Keeps all original contract checks + lambda direct invoke + log tail
+############################################
+
+############################################
 # REQUIRED VALUES
 ############################################
 API_ID="${API_ID:-702s1q2eid}"
@@ -10,6 +20,8 @@ FN="${FN:-promptline-mcp-router}"
 
 # Router auth header expects x-internal-token
 INTERNAL_TOKEN="${INTERNAL_TOKEN:-${MCP_INTERNAL_API_KEY:-}}"
+
+# Backend for optional direct calls from *wherever this script runs*
 BACKEND_BASE_URL="${BACKEND_BASE_URL:-http://localhost:8080}"
 
 # GitHub repo info (only used for /git/get-file payload examples)
@@ -20,8 +32,24 @@ REPO_NAME="${REPO_NAME:-${GITHUB_REPO:-}}"
 GIT_REF_DEFAULT="${GIT_REF_DEFAULT:-config/live}"
 GIT_PATH_DEFAULT="${GIT_PATH_DEFAULT:-config/ui.json}"
 
+# Where router writes canonical runtime artifacts (based on your publish-canonical output)
+UI_RUNTIME_PATH="${UI_RUNTIME_PATH:-runtime/ui.json}"
+POLICY_RUNTIME_PATH="${POLICY_RUNTIME_PATH:-runtime/policy.json}"
+
+# Change set knobs (override if you want deterministic demo)
+RPM="${RPM:-$((100 + RANDOM % 900))}"   # 100-999
+MODE="${MODE:-$( ((RANDOM % 2)) && echo strict || echo balanced )}"
+
+# Optional: if you want an easy monotonically increasing demo value:
+# RPM="${RPM:-$(( (10#$(date +%S)) + 100 ))}"
+
 if [[ -z "${INTERNAL_TOKEN}" ]]; then
   echo "ERROR: set INTERNAL_TOKEN (or MCP_INTERNAL_API_KEY) in env"
+  exit 1
+fi
+
+if ! command -v aws >/dev/null 2>&1; then
+  echo "ERROR: aws cli not found"
   exit 1
 fi
 
@@ -35,7 +63,7 @@ LOG_FILE="$OUT_DIR/contract_full_${TS}.txt"
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "=== MCP + BACKEND CONTRACT FULL PROBE ==="
+echo "=== MCP + BACKEND CONTRACT PROBE (BETTER) ==="
 echo "timestamp_utc=$TS"
 echo "api_id=$API_ID"
 echo "region=$AWS_REGION"
@@ -46,6 +74,10 @@ echo "repo_owner=${REPO_OWNER:-<unset>}"
 echo "repo_name=${REPO_NAME:-<unset>}"
 echo "git_ref_default=$GIT_REF_DEFAULT"
 echo "git_path_default=$GIT_PATH_DEFAULT"
+echo "runtime_ui_path=$UI_RUNTIME_PATH"
+echo "runtime_policy_path=$POLICY_RUNTIME_PATH"
+echo "demo_change ui.rateLimit.rpm=$RPM"
+echo "demo_change policy.rules.mode=$MODE"
 echo
 
 ############################################
@@ -60,7 +92,6 @@ echo
 ############################################
 hr() { echo "------------------------------------------------------------"; }
 
-# Runs a command but never fails the whole script.
 soft_run() {
   set +e
   "$@"
@@ -70,12 +101,26 @@ soft_run() {
   return 0
 }
 
-# Pretty print JSON if possible, otherwise raw.
 pp_json() {
   if command -v jq >/dev/null 2>&1; then
     jq . 2>/dev/null || cat
   else
     cat
+  fi
+}
+
+# print a compact line for demo output
+kv() { printf "%-24s %s\n" "$1" "$2"; }
+
+# Extract a jq field from a JSON string, safely
+jget() {
+  local json="$1"
+  local expr="$2"
+  if command -v jq >/dev/null 2>&1; then
+    echo "$json" | jq -r "$expr" 2>/dev/null || true
+  else
+    # jq not installed -> no extraction
+    true
   fi
 }
 
@@ -114,6 +159,60 @@ call_api() {
     ${body:+-d "$body"}
 
   echo
+}
+
+# Capturing variant (returns body to stdout; still logs headers/body in file)
+call_api_capture_body() {
+  local name="$1"
+  local method="$2"
+  local path="$3"
+  local body="${4:-}"
+  local auth_mode="${5:-none}"
+
+  hr
+  echo "== $name (CAPTURE) =="
+  echo "REQUEST: $method $path"
+  echo "AUTH_MODE: $auth_mode"
+  if [[ -n "$body" ]]; then
+    echo "REQUEST_BODY:"
+    echo "$body" | pp_json
+  else
+    echo "REQUEST_BODY: <none>"
+  fi
+  echo
+
+  local auth_header=()
+  if [[ "$auth_mode" == "good" ]]; then
+    auth_header=(-H "x-internal-token: $INTERNAL_TOKEN")
+  elif [[ "$auth_mode" == "bad" ]]; then
+    auth_header=(-H "x-internal-token: WRONG_TOKEN")
+  fi
+
+  # Separate headers + body cleanly.
+  local hdr_file="$OUT_DIR/headers_${name//[^a-zA-Z0-9]/_}_${TS}.txt"
+  local body_file="$OUT_DIR/body_${name//[^a-zA-Z0-9]/_}_${TS}.json"
+
+  echo "RESPONSE_HEADERS_FILE: $hdr_file"
+  echo "RESPONSE_BODY_FILE:    $body_file"
+  echo
+
+  set +e
+  curl -sS -D "$hdr_file" -o "$body_file" -X "$method" "$BASE_URL$path" \
+    -H "content-type: application/json" \
+    "${auth_header[@]}" \
+    ${body:+-d "$body"}
+  local rc=$?
+  set -e
+
+  echo "-- headers --"
+  cat "$hdr_file" || true
+  echo "-- body --"
+  cat "$body_file" | pp_json || true
+  echo "exit=$rc"
+  echo
+
+  cat "$body_file"
+  return 0
 }
 
 aws_snapshot() {
@@ -206,6 +305,115 @@ backend_call() {
   echo
 }
 
+# Fetch file via router /git/get-file (returns JSON response body)
+git_get_file() {
+  local ref="$1"
+  local path="$2"
+  curl -sS -X POST "$BASE_URL/git/get-file" \
+    -H "content-type: application/json" \
+    -H "x-internal-token: $INTERNAL_TOKEN" \
+    -d '{"ref":"'"$ref"'","path":"'"$path"'"}'
+}
+
+# Extract a JSON "content" string and parse it as JSON if possible
+# Prints:
+#  - value of key expression if given
+#  - or the whole parsed JSON
+extract_inner_json() {
+  local outer="$1"
+  local inner
+  inner="$(jget "$outer" '.content // empty')"
+  if [[ -z "$inner" ]]; then
+    echo ""
+    return 0
+  fi
+  # inner is a JSON file stored as a string
+  if command -v jq >/dev/null 2>&1; then
+    echo "$inner" | jq . 2>/dev/null || echo "$inner"
+  else
+    echo "$inner"
+  fi
+}
+
+# Pretty demo diff: base vs head for the two fields
+show_pr_value_diff() {
+  local base_ref="$1"
+  local head_ref="$2"
+
+  hr
+  echo "== DEMO: CONFIG DIFF (base vs PR head) =="
+
+  echo "-- fetching base ($base_ref) --"
+  local base_ui_resp base_pol_resp
+  base_ui_resp="$(git_get_file "$base_ref" "$UI_RUNTIME_PATH" || true)"
+  base_pol_resp="$(git_get_file "$base_ref" "$POLICY_RUNTIME_PATH" || true)"
+
+  echo "-- fetching head ($head_ref) --"
+  local head_ui_resp head_pol_resp
+  head_ui_resp="$(git_get_file "$head_ref" "$UI_RUNTIME_PATH" || true)"
+  head_pol_resp="$(git_get_file "$head_ref" "$POLICY_RUNTIME_PATH" || true)"
+
+  # Extract values
+  local base_rpm head_rpm base_mode head_mode
+  if command -v jq >/dev/null 2>&1; then
+    base_rpm="$(jget "$(echo "$base_ui_resp" | jq -r '.content // ""' 2>/dev/null || echo "")" '.rateLimit.rpm // empty')"
+    head_rpm="$(jget "$(echo "$head_ui_resp" | jq -r '.content // ""' 2>/dev/null || echo "")" '.rateLimit.rpm // empty')"
+    base_mode="$(jget "$(echo "$base_pol_resp" | jq -r '.content // ""' 2>/dev/null || echo "")" '.rules.mode // empty')"
+    head_mode="$(jget "$(echo "$head_pol_resp" | jq -r '.content // ""' 2>/dev/null || echo "")" '.rules.mode // empty')"
+  else
+    base_rpm=""
+    head_rpm=""
+    base_mode=""
+    head_mode=""
+  fi
+
+  echo
+  kv "base_branch" "$base_ref"
+  kv "pr_head_branch" "$head_ref"
+  echo
+
+  kv "ui.rateLimit.rpm (base)" "${base_rpm:-<unknown>}"
+  kv "ui.rateLimit.rpm (head)" "${head_rpm:-<unknown>}"
+  kv "policy.rules.mode (base)" "${base_mode:-<unknown>}"
+  kv "policy.rules.mode (head)" "${head_mode:-<unknown>}"
+
+  echo
+  if [[ -n "${base_rpm:-}" && -n "${head_rpm:-}" && "$base_rpm" != "$head_rpm" ]]; then
+    echo "✅ rpm changed: $base_rpm -> $head_rpm"
+  elif [[ -n "${base_rpm:-}" && -n "${head_rpm:-}" ]]; then
+    echo "⚠️ rpm did not change (base == head). That usually means ensure-pr returned an existing PR without updates."
+  else
+    echo "ℹ️ Could not compute rpm diff (jq missing or file missing)."
+  fi
+
+  if [[ -n "${base_mode:-}" && -n "${head_mode:-}" && "$base_mode" != "$head_mode" ]]; then
+    echo "✅ mode changed: $base_mode -> $head_mode"
+  elif [[ -n "${base_mode:-}" && -n "${head_mode:-}" ]]; then
+    echo "⚠️ mode did not change (base == head)."
+  else
+    echo "ℹ️ Could not compute mode diff."
+  fi
+
+  echo
+  echo "-- raw router responses saved in log; for quick peek: --"
+  echo "base_ui_found=$(jget "$base_ui_resp" '.found // empty') base_ui_path=$UI_RUNTIME_PATH"
+  echo "head_ui_found=$(jget "$head_ui_resp" '.found // empty') head_ui_path=$UI_RUNTIME_PATH"
+  echo "base_policy_found=$(jget "$base_pol_resp" '.found // empty') base_policy_path=$POLICY_RUNTIME_PATH"
+  echo "head_policy_found=$(jget "$head_pol_resp" '.found // empty') head_policy_path=$POLICY_RUNTIME_PATH"
+  echo
+}
+
+############################################
+# BUILD CHANGESET (randomized by default)
+############################################
+CHECK_LIVE_REQ='{
+  "env":"live",
+  "changes":[
+    {"target":"ui","op":"set","path":"rateLimit.rpm","value":'"$RPM"'},
+    {"target":"policy","op":"set","path":"rules.mode","value":"'"$MODE"'"}
+  ]
+}'
+
 ############################################
 # 0) Snapshot
 ############################################
@@ -225,12 +433,11 @@ call_api "2b) POST /config/publish-canonical (wrong token)" "POST" "/config/publ
 ############################################
 # 3) Router publish routes (positive)
 ############################################
-call_api "3a) POST /config/publish-canonical (good token)" "POST" "/config/publish-canonical" '{}' "good"
+PUBLISH_CANONICAL_BODY="$(call_api_capture_body "3a_POST_publish_canonical" "POST" "/config/publish-canonical" '{}' "good")"
 call_api "3b) POST /config/publish-to-s3 (good token)" "POST" "/config/publish-to-s3" '{}' "good"
 
 ############################################
 # 4) Router: /git/get-file (contract discovery)
-# Assumption: request includes ref + path, optionally owner/repo.
 ############################################
 GIT_GETFILE_MIN='{"ref":"'"$GIT_REF_DEFAULT"'","path":"'"$GIT_PATH_DEFAULT"'"}'
 call_api "4a) POST /git/get-file (good token, minimal payload)" "POST" "/git/get-file" "$GIT_GETFILE_MIN" "good"
@@ -248,15 +455,7 @@ call_api "4c) POST /git/get-file (bad request: empty body)" "POST" "/git/get-fil
 
 ############################################
 # 5) Router: Phase 0-ish /config/check-live
-# Assumption: same request shape as ConfigCheckLiveRequest.
 ############################################
-CHECK_LIVE_REQ='{
-  "env":"live",
-  "changes":[
-    {"target":"ui","op":"set","path":"rateLimit.rpm","value":123},
-    {"target":"policy","op":"set","path":"rules.mode","value":"strict"}
-  ]
-}'
 call_api "5a) POST /config/check-live (good token)" "POST" "/config/check-live" "$CHECK_LIVE_REQ" "good"
 call_api "5b) POST /config/check-live (missing changes -> expect 400)" "POST" "/config/check-live" '{"env":"live"}' "good"
 
@@ -267,9 +466,34 @@ call_api "6a) POST /config/check-open-pr (good token)" "POST" "/config/check-ope
 call_api "6b) POST /config/check-open-pr (empty body -> expect 400)" "POST" "/config/check-open-pr" '{}' "good"
 
 ############################################
-# 7) Router: Phase 2 /config/ensure-pr (may create PR)
+# 7) Router: Phase 2 /config/ensure-pr (capture + demo diff)
 ############################################
-call_api "7a) POST /config/ensure-pr (good token)" "POST" "/config/ensure-pr" "$CHECK_LIVE_REQ" "good"
+ENSURE_BODY="$(call_api_capture_body "7a_POST_ensure_pr" "POST" "/config/ensure-pr" "$CHECK_LIVE_REQ" "good")"
+
+# Extract PR info (best-effort)
+PR_URL="$(jget "$ENSURE_BODY" '.pr.htmlUrl // empty')"
+HEAD_REF="$(jget "$ENSURE_BODY" '.headBranch // .pr.headRef // empty')"
+BASE_REF="$(jget "$ENSURE_BODY" '.baseBranch // .pr.baseRef // "'"$GIT_REF_DEFAULT"'"')"
+DECISION="$(jget "$ENSURE_BODY" '.decision // empty')"
+
+hr
+echo "== ENSURE-PR SUMMARY =="
+kv "decision" "${DECISION:-<unknown>}"
+kv "pr_url" "${PR_URL:-<none>}"
+kv "base_ref" "${BASE_REF:-<unknown>}"
+kv "head_ref" "${HEAD_REF:-<unknown>}"
+kv "requested_rpm" "$RPM"
+kv "requested_mode" "$MODE"
+echo
+
+# If ensure-pr produced a head ref, show base vs head diff for demo
+if [[ -n "${HEAD_REF}" ]]; then
+  show_pr_value_diff "$BASE_REF" "$HEAD_REF"
+else
+  hr
+  echo "== DEMO DIFF SKIPPED: could not extract head_ref from ensure-pr response =="
+  echo
+fi
 
 ############################################
 # 8) Backend triggers (read runtime + invalidate)
@@ -277,12 +501,11 @@ call_api "7a) POST /config/ensure-pr (good token)" "POST" "/config/ensure-pr" "$
 backend_call "8a) GET /ui-config" "GET" "$BACKEND_BASE_URL/ui-config"
 backend_call "8b) GET /policy" "GET" "$BACKEND_BASE_URL/policy"
 
-# You already have this pattern; leaving as a safe best-effort trigger:
 backend_call "8c) POST /internal/config-updated (best effort)" "POST" "$BACKEND_BASE_URL/internal/config-updated" \
 '{
   "env":"live",
   "updated":["ui","policy"],
-  "version":"contract-probe-'$TS'"
+  "version":"contract-probe-'"$TS"'"
 }'
 
 ############################################

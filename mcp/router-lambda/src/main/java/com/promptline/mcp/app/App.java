@@ -155,7 +155,9 @@ public final class App {
                     ConfigCheckOpenPrResponse out = openPrDecision.checkOpenPr(req);
                     return out;
                 })
-
+                // -----------------------
+                // Phase 2: raise pr if it does not exist
+                // -----------------------
                 .add("POST", "/config/ensure-pr", (evt, ctx) -> {
                     var req = Json.read(om, evt.getBody(), ConfigCheckLiveRequest.class);
                     ConfigEnsurePrResponse out = configPr.ensurePr(req);
