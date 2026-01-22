@@ -13,6 +13,7 @@ import com.promptline.mcp.core.git.github.GitHubProvider;
 import com.promptline.mcp.core.live.BackendConfigClient;
 import com.promptline.mcp.core.live.ConfigDecisionService;
 import com.promptline.mcp.core.notify.BackendNotifier;
+import com.promptline.mcp.core.pr.ConfigPrService;
 import com.promptline.mcp.core.pr.OpenPrDecisionService;
 import com.promptline.mcp.core.publish.AwsS3Publisher;
 import com.promptline.mcp.core.publish.PublishToS3Service;
@@ -21,6 +22,7 @@ import com.promptline.mcp.model.config.PublishCanonicalResponse;
 import com.promptline.mcp.model.live.ConfigCheckLiveRequest;
 import com.promptline.mcp.model.live.ConfigCheckLiveResponse;
 import com.promptline.mcp.model.pr.ConfigCheckOpenPrResponse;
+import com.promptline.mcp.model.pr.ConfigEnsurePrResponse;
 import com.promptline.mcp.model.publish.PublishToS3Request;
 import com.promptline.mcp.model.publish.PublishToS3Response;
 import com.promptline.mcp.routing.Router;
@@ -36,6 +38,8 @@ public final class App {
     public final HttpClient http;
     public final GitProvider git;
     public final BackendNotifier notifier;
+    public final ConfigPrService configPr;
+
 
     // new: publish vertical dependencies
     public final S3Client s3;
@@ -76,6 +80,7 @@ public final class App {
         this.configDecision = new ConfigDecisionService(backendConfig, om);
 
         this.openPrDecision = new OpenPrDecisionService(git, om, config.configBranchLive());
+        this.configPr = new ConfigPrService(git, om, config.configBranchLive(), openPrDecision);
 
         this.router = new Router()
                 .add("GET", "/healthz", (evt, ctx) -> new Healthz(true))
@@ -149,7 +154,14 @@ public final class App {
                     var req = Json.read(om, evt.getBody(), ConfigCheckLiveRequest.class);
                     ConfigCheckOpenPrResponse out = openPrDecision.checkOpenPr(req);
                     return out;
+                })
+
+                .add("POST", "/config/ensure-pr", (evt, ctx) -> {
+                    var req = Json.read(om, evt.getBody(), ConfigCheckLiveRequest.class);
+                    ConfigEnsurePrResponse out = configPr.ensurePr(req);
+                    return out;
                 });
+
     }
 
     public static App get() {

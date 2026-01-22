@@ -32,6 +32,13 @@ public class McpPlanService {
     }
 
     @Transactional
+    public int supersedeAllProposed(UUID chatId) {
+        return planRepo.supersedeAllProposed(chatId);
+    }
+
+
+
+    @Transactional
     public PlanEntity createProposedPlan(ChatEntity chat, MessageEntity assistantPlanMessage, String proposalJson) {
         JsonNode proposalNode;
         try {

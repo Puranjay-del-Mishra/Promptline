@@ -9,3 +9,4 @@ public record PublishCanonicalResponse(
         String uiKey,
         String policyKey
 ) {}
+        

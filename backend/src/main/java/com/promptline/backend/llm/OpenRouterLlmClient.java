@@ -69,23 +69,16 @@ public class OpenRouterLlmClient implements LlmClient {
 
         Output MUST be valid JSON and NOTHING else.
         Schema:
-        {
-        "reply": "<plain text reply>",
-        "mcp": {
-            "actions": [
-            { "tool": "<tool_name>", "input": { "key": "value" } }
-            ]
-        }
-        }
+        {"reply":"<plain text reply>"}
 
         Rules:
         - Return ONE line JSON only (no markdown)
         - Always include "reply"
-        - Always include "mcp" with "actions" (actions can be empty [])
-        - DO NOT output keys named "summary" or "steps"
-        - If the user asks for a plan / steps / tool workflow, DO NOT output a plan here.
-        Instead: reply asking them to confirm they want a plan OR tell them you'll propose a plan next.
+        - DO NOT include "mcp", "actions", "summary", "steps", or any plan JSON
+        - If the user asks for a plan / steps / tool workflow:
+        Reply: "I can propose a plan for this. Say 'yes' to confirm you want a plan."
         """;
+
 
         String raw = callChatCompletion(
                 props.getOpenrouter().getStrongModel(),
@@ -107,28 +100,48 @@ public class OpenRouterLlmClient implements LlmClient {
     @Override
     public String generatePlanJson(String chatTitle, List<String> chatHistory, String userMessage) {
         String system = """
-                You are Promptline MCP Planner.
+                You are generating a PLAN JSON for a config-change system.
 
-                Output MUST be valid JSON and NOTHING else.
-                One-line JSON only. No markdown.
+                Output MUST be a single valid JSON object and NOTHING ELSE.
+                No markdown, no explanation, no trailing text.
 
-                Schema:
+                Allowed planVersion: "v1"
+                intent MUST be: "runtime_config_change"
+                env MUST be: "live"
+
+                The plan MUST include:
+                - planVersion (string)
+                - intent (string)
+                - env (string)
+                - summary (string, <= 140 chars)
+                - requiresConfirmation (boolean, always true)
+                - changes (array length 1..20)
+
+                Each change MUST be:
+                { "target": "ui" | "policy", "op": "set", "path": "<dot.path>", "value": <any JSON value> }
+
+                The only allowed op is "set".
+
+                Important:
+                - Use the dot-path exactly as the JSON path inside the config files.
+                - For language changes, update policy path like: rules.languageTag = "es" or similar (if that path exists).
+                - For theme changes, update ui path like: theme = "dark" or "light".
+
+                Here are the current canonical config shapes:
+
+                UI config (config/ui.json):
                 {
-                  "summary": "<1 sentence plan summary>",
-                  "steps": [
-                    {
-                      "tool": "<tool_name>",
-                      "args": { "key": "value" },
-                      "why": "<short reason>"
-                    }
-                  ]
+                "theme": "dark",
+                "version": 3
                 }
 
-                Rules:
-                - steps is REQUIRED (can be empty [])
-                - Use ONLY tools that are safe placeholders for Lambda MCP execution.
-                - Each step MUST include "tool" and "args" (args can be {}).
-                - Keep args minimal and deterministic.
+                POLICY config (config/policy.json):
+                {
+                "allowlist": ["/healthz"],
+                "rateLimit": { "rpm": 69 }
+                }
+
+                Now generate the plan JSON for the user request:
                 """;
 
         // keep context small + deterministic
@@ -160,7 +173,16 @@ public class OpenRouterLlmClient implements LlmClient {
         String json = extractFirstJsonObject(raw);
         if (json == null) {
             // fail-soft but still valid JSON
-            return "{\"summary\":\"Unable to generate plan\",\"steps\":[]}";
+            return """
+                {
+                "planVersion":"v1",
+                "intent":"runtime_config_change",
+                "env":"live",
+                "summary":"Unable to generate plan",
+                "requiresConfirmation":true,
+                "changes":[]
+                }
+                """.trim();
         }
         return json;
     }

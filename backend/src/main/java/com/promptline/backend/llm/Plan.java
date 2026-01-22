@@ -1,7 +1,7 @@
 package com.promptline.backend.llm;
 
 import com.promptline.backend.chat.Chat;
-import com.promptline.backend.chat.Message;
+import com.promptline.backend.chat.MessageEntity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -25,7 +25,7 @@ public class Plan {
     // The assistant message that contains the proposal
     @OneToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "message_id", nullable = false)
-    private Message message;
+    private MessageEntity message;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -53,8 +53,8 @@ public class Plan {
     public Chat getChat() { return chat; }
     public void setChat(Chat chat) { this.chat = chat; }
 
-    public Message getMessage() { return message; }
-    public void setMessage(Message message) { this.message = message; }
+    public MessageEntity getMessage() { return message; }
+    public void setMessage(MessageEntity message) { this.message = message; }
 
     public PlanStatus getStatus() { return status; }
     public void setStatus(PlanStatus status) { this.status = status; }

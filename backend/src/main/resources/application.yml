@@ -12,6 +12,10 @@ promptline:
     uiKey: ${PROMPTLINE_UI_KEY:${promptline.env}/ui-config.json}
     policyKey: ${PROMPTLINE_POLICY_KEY:${promptline.env}/policy.json}
 
+  mcp:
+    base-url: ${PROMPTLINE_MCP_BASE_URL:}
+    internal-token: ${MCP_INTERNAL_API_KEY:}
+    
   llm:
     provider: ${PROMPTLINE_LLM_PROVIDER:noop}   # set to openrouter to enable
     openrouter:

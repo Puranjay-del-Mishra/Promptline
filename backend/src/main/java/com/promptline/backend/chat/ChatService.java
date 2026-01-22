@@ -5,9 +5,12 @@ import com.promptline.backend.mcp.McpPlanService;
 import com.promptline.backend.mcp.PlanEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.promptline.backend.sse.SseHub;
 import java.util.List;
 import java.util.UUID;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
 
 @Service
 public class ChatService {
@@ -16,14 +19,27 @@ public class ChatService {
     private final MessageRepository messageRepo;
     private final LlmClient llm;
     private final McpPlanService mcpPlanService;
+    private final SseHub hub;
+    private final ObjectMapper om;
 
-    public ChatService(ChatRepository chatRepo, MessageRepository messageRepo, LlmClient llm, McpPlanService mcpPlanService) {
+
+    public ChatService(
+            ChatRepository chatRepo,
+            MessageRepository messageRepo,
+            LlmClient llm,
+            McpPlanService mcpPlanService,
+            SseHub hub,
+            ObjectMapper om
+    ) {
         this.chatRepo = chatRepo;
         this.messageRepo = messageRepo;
         this.llm = llm;
         this.mcpPlanService = mcpPlanService;
+        this.hub = hub;
+        this.om = om;
         System.out.println("LLM client wired: " + llm.getClass().getName());
     }
+
 
     public ChatEntity createChat() {
         return chatRepo.save(new ChatEntity());
@@ -48,9 +64,7 @@ public class ChatService {
         ChatEntity chat = chatRepo.findById(chatId)
                 .orElseThrow(() -> new IllegalArgumentException("Chat not found"));
 
-        List<String> history = messageRepo.findMessagesForChat(chatId).stream()
-                .map(m -> m.getRole() + ": " + m.getContent())
-                .toList();
+        List<String> history = buildHistory(chatId, 20);
 
         boolean proposePlan = this.llm.shouldProposePlan(chat.getTitle(), history, userContent);
 
@@ -91,14 +105,21 @@ public class ChatService {
         chatRepo.save(chat);
 
         // 3) Build history (for regen / context)
-        List<String> history = messageRepo.findMessagesForChat(chatId).stream()
-                .map(m -> m.getRole() + ": " + m.getContent())
-                .toList();
+        List<String> history = buildHistory(chatId, 20);
 
         // 4) Generate plan JSON (RAW JSON string)
         String planJson = this.llm.generatePlanJson(chat.getTitle(), history, userContent);
         if (planJson == null || planJson.isBlank()) {
-            planJson = "{\"summary\":\"Unable to generate plan\",\"steps\":[]}";
+            planJson = """
+                {
+                "planVersion":"v1",
+                "intent":"runtime_config_change",
+                "env":"live",
+                "summary":"Unable to generate plan",
+                "requiresConfirmation":true,
+                "changes":[]
+                }
+                """.trim();
         }
 
         // 5) Save assistant message (store JSON as message content)
@@ -112,7 +133,23 @@ public class ChatService {
         chatRepo.save(chat);
 
         // 6) Persist plans + tool_calls placeholders
+        // Supersede any older proposed plan(s) for this chat
+        mcpPlanService.supersedeAllProposed(chatId);
+
         PlanEntity plan = mcpPlanService.createProposedPlan(chat, assistant, planJson);
+
+        try {
+            hub.broadcast("PLAN_PROPOSED", om.writeValueAsString(Map.of(
+                    "chatId", chatId.toString(),
+                    "planId", plan.getId().toString(),
+                    "status", plan.getStatus().name(),
+                    "summary", plan.getProposalJson().path("summary").asText(""),
+                    "changes", plan.getProposalJson().path("changes")
+            )));
+        } catch (Exception e) {
+            // never break chat flow due to SSE
+            System.err.println("PLAN_PROPOSED broadcast failed: " + e.getMessage());
+        }
 
         return new PlanProposedResponse(assistant, plan);
     }
@@ -181,4 +218,22 @@ public class ChatService {
         if (cleaned.isBlank()) return "New chat";
         return cleaned.length() <= 42 ? cleaned : cleaned.substring(0, 42) + "…";
     }
+    private List<String> buildHistory(UUID chatId, int max) {
+        return messageRepo.findMessagesForChat(chatId).stream()
+                .filter(m -> {
+                    if (!"assistant".equals(m.getRole())) return true;
+                    return !isPlanJson(m.getContent());
+                })
+                .limit(max)
+                .map(m -> m.getRole() + ": " + m.getContent())
+                .toList();
+    }
+
+    private boolean isPlanJson(String content) {
+        if (content == null) return false;
+        return content.contains("\"planVersion\"")
+                && content.contains("\"intent\"")
+                && content.contains("\"changes\"");
+    }
+
 }

@@ -1,12 +1,12 @@
 package com.promptline.mcp.core.git.github;
 
-import com.promptline.mcp.util.ApiException;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+
+import com.promptline.mcp.util.ApiException;
 
 public final class GitHubHttp {
     private final HttpClient http;
@@ -18,15 +18,34 @@ public final class GitHubHttp {
     }
 
     public String getJson(String url) {
+        return sendJson("GET", url, null);
+    }
+
+    public String postJson(String url, String jsonBody) {
+        return sendJson("POST", url, jsonBody);
+    }
+
+    public String putJson(String url, String jsonBody) {
+        return sendJson("PUT", url, jsonBody);
+    }
+
+    private String sendJson(String method, String url, String jsonBody) {
         try {
-            HttpRequest req = HttpRequest.newBuilder()
+            HttpRequest.Builder b = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Accept", "application/vnd.github+json")
                     .header("Authorization", "Bearer " + token)
-                    .header("X-GitHub-Api-Version", "2022-11-28")
-                    .GET()
-                    .build();
+                    .header("X-GitHub-Api-Version", "2022-11-28");
 
+            if ("GET".equals(method)) {
+                b.GET();
+            } else {
+                if (jsonBody == null) jsonBody = "";
+                b.header("Content-Type", "application/json");
+                b.method(method, HttpRequest.BodyPublishers.ofString(jsonBody));
+            }
+
+            HttpRequest req = b.build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             int code = resp.statusCode();
 

@@ -31,3 +31,42 @@ Thumbs.db
 node_modules/
 dist/
 .next/
+
+# ---- OS / IDE ----
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# ---- Java / Gradle / Maven ----
+**/target/
+**/*.class
+**/*.log
+
+# ---- Spring Boot local ----
+**/logs/
+**/out/
+**/*.pid
+
+# ---- Local env/secrets ----
+.env
+.env.*
+**/application-local.yml
+**/application-dev.yml
+
+# ---- Probe outputs / scratch ----
+repo_dump.txt
+backend/out/
+backend/*.txt
+
+# ---- Lambda local scratch ----
+mcp/router-lambda-context/
+
+# Probe outputs / scratch
+repo_dump.txt
+backend/out/
+backend/*.txt
+
+# Lambda scratch
+mcp/router-lambda-context/
+
