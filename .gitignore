@@ -70,3 +70,7 @@ backend/*.txt
 # Lambda scratch
 mcp/router-lambda-context/
 
+
+# local lambda scratch
+mcp/router-lambda-context/
+
