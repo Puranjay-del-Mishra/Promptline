@@ -4,6 +4,6 @@
     "rpm" : 69
   },
   "rules" : {
-    "mode" : "strict"
+    "mode" : "balanced"
   }
 }
