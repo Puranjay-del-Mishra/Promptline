@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16
+    container_name: promptline-db
+    environment:
+      POSTGRES_DB: promptline
+      POSTGRES_USER: promptline
+      POSTGRES_PASSWORD: promptline
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U promptline -d promptline"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: promptline-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # DB
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/promptline
+      SPRING_DATASOURCE_USERNAME: promptline
+      SPRING_DATASOURCE_PASSWORD: promptline
+
+      # Runtime config from S3 (live)
+      AWS_REGION: us-east-1
+      S3_BUCKET: promptline
+      S3_RUNTIME_PREFIX: runtime
